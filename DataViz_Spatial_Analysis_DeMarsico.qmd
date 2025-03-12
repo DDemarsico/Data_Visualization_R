@@ -1,0 +1,392 @@
+---
+title: "DataViz_Spatial_Analysis"
+format: html
+editor: visual
+---
+
+# Data Viz: Spatial Analysis
+
+In this project, you will be analyzing spatial variation patterns in the presence of Behavioral Health Treatment Service Providers throughout Colorado. Understanding this is useful in the current opioid epidemic, as some patients who had a non-fatal opioid overdose would receive treatments at these Behavioral Health Treatment Service Providers. The data we will analyze are available at <https://data-cdphe.opendata.arcgis.com/datasets/> samhsa-colorado-substance-abuse-and-mental-health-service-providers. The data will also be available on Canvas as the file SAMHSA.csv. This project will expand your skills in the following areas: data munging/wrangling skills, spatial data analysis, use of APIs, and visualization. The key questions I will want answered in the project will be the following:
+
+1.  Are the spatial distributions of Behavioral Health Treatment Service Providers through- out Colorado different by Facility Type?
+
+2\. Are the spatial distributions of Behavioral Health Treatment Service Providers through- out Colorado different based on whether Naltrexone or Buprenorphine is used in treat- ment?
+
+## Libraries:
+
+Let's start by uploading the necessary packages:
+
+```{r}
+library(tidyverse)
+library(spatstat)
+library(htmlTable)
+library(tidyr)
+library(table1)
+library(corrplot)
+library(fastDummies)
+library(psych)
+library(bestNormalize)
+library(ggmap)
+```
+
+And intiate Stadia maps functioning
+
+```{r}
+register_stadiamaps(key = "692f278c-0e50-4ac4-b21a-285ef7494bd3")
+
+colo <- c(left = -109, bottom = 37, right = -102, top = 41)
+get_stadiamap(colo, zoom = 8, maptype = "stamen_terrain") |> ggmap()
+```
+
+## Data upload/reading:
+
+First, let's read in the data:
+
+```{r}
+data <- read.csv("C:\\Users\\domin\\Downloads\\SAMHSA.csv")
+```
+
+Now let's take a look at the data summary:
+
+```{r}
+data
+```
+
+Great, there doesn't appear to be any missing data that isn't directly meaningful. Most of the data that is missing leads directly to services not being provided. Additionally, services that are provided are effectively dummy coded, so that work has already been done.
+
+# Question 1:
+
+Now that the data has been read in, let's start painting a picture of what our data distribution looks like:
+
+### Frequency:
+
+What is the general distribution of data among our treatment centers:
+
+```{r}
+table(data$Type_)
+
+
+#Now let's create an exportable Table 1
+
+label(data$Type_) <- "Treatment(s) provided"
+table1(~ Type_, 
+       caption = "Table 1: Treatments Provided at Behavioral Health Centers",
+       data = data)
+```
+
+We have a total N of 506. The vast majority of centers are purely substance abuse treatment or purely mental health treatment.
+
+The minority are comprised of housing, or centers that offer multiple types of care. Let's put this into a Bar Chart to better see our distributions:
+
+```{r}
+P1 <- ggplot(data, aes(x = Type_)) +
+  geom_bar(fill = "skyblue", color = "black") + 
+  labs(
+    title = "Types of Treatment Centers",
+    x = "Treatment Type",
+    y = "Frequency/Count"
+  ) +
+  theme_minimal() +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+P1
+```
+
+### Preliminary spatial visualization:
+
+Great, after visualizing the data, I can see the pattern a bit more clearly. Now I would like to look at the overall distribution of patterns of where these locations lie on the map of Colorado.
+
+```{r}
+# Let's start by creating our observation window:
+bbx <- owin(xrange=range(data$X), yrange=range(data$Y))
+
+# Now we can make a the plot of all of our locartions:
+X <- ppp(data$X, data$Y, window=bbx)
+
+plot(X)
+
+```
+
+As expected, the data is highly clustered around the Front Range. There are some slight smaller clusters around Grand Junction, but the data is otherwise split rather randomly.
+
+### Density Plot:
+
+For ease of understanding, I also want to plot the density of these locations using a heat map:
+
+```{r}
+tmp <- density(X, sigma = 0.25)
+plot(tmp)
+```
+
+## Data split:
+
+I want to look at the rates of being a substance abuse facility or not. Given that the majority of these facilities are split between substance use center and not, I want to create a new binary variable based off of `Type_`. This will be marked as 1 if the center has any specific substance abuse treatment services. All others will be classified as 0, which will be the centers not providing substance abuse treatment.
+
+```{r}
+
+# Create a new binary variable
+data$Type_Clean <- ifelse(grepl("Substance abuse", data$Type_), 1, 0)
+data$Type_Clean
+data$Type_Clean <-factor(data$Type_Clean)
+
+# Create Binary Variable for these groups:
+
+data$Substance_Combine <- ifelse(data$Type_Clean == 1, 1,0)
+data$Substance_Combine # Binary variable for any clinic that has SA treatment.
+
+data$Type_Other <- ifelse(data$Type_Clean == 0 , 1,0)
+data$Type_Other # Binary Variable for any clinic that does not have SA treatment.
+
+
+```
+
+## Data w/ Marks
+
+Now, let's make our matrix:
+
+Since the majority are substance use facilities, let's use mental health as our marker.
+
+```{r}
+n <- dim(data)[1]     # Gets the dimension from the data frame
+sat <- rep(0,n)       # Initialize the vector with n number of 0's
+tmp <- grep("Mental", data$Type_, invert=TRUE) # Pull rows that don't have Mental
+sat[tmp] <- 1         # Use the index to set matching elements to 1
+sat <- factor(sat)    # Transform thiss into a factor
+X.m <-ppp(data$X, data$Y, window=bbx, marks=sat) # Define new plot
+
+plot(X.m)
+```
+
+Ok! This shows that there are still a lot of mental health facilities, but the majority still seem to be clumped in the front range.
+
+### Sites + Map Overlay:
+
+Now I want to see where all of these sites are directly on top of a map:
+
+```{r}
+# Create the map of Colorado for our overlay
+colo_map <- get_stadiamap(colo, zoom = 8, maptype = "stamen_terrain") |> ggmap()
+
+# Put the scatter plot over the map
+colo_map +
+  geom_point(aes(x = X, y = Y, color = Type_Clean), data = data, size = 2, alpha = 0.5) +
+  scale_color_manual(values = c("blue", "red"),
+                     labels = c("Other","Substance Abuse Treatment")
+                     ) +
+  labs(color = "Treatment Type") +
+  labs(title = "Figure 1: Locations of Behavioral Health Clinic by Treatment")
+
+```
+
+This map is very helpful because it effectively has 3 levels while only coding 2! By lowering the alpha and increasing transparency, we start to see purple over the regions that have both options available.
+
+## Spatial Analysis
+
+To determine if there are any differences between centers that offer substance abuse therapies and those that don't, let's determine if the centers are located randomly in space:
+
+```{r}
+# First let's plot out our sites on a 10x10 map.
+Q10 <- quadratcount(X.m,nx=10,ny=10)
+plot(Q10)
+
+# Now, let's see if there is any difference statistically of only our sites without differentiating services: 
+
+quadrat.test(X.m,nx=10,ny=10)
+
+# P < .0001, centers are not distributed randomly
+
+```
+
+### Spatial Inference:
+
+Great, we found that the data centers are distributed spatially in a non-random manner. Let's start looking at differences between SA centers and Non-SA centers:
+
+```{r}
+
+#Let's look at a density plot separating the two types of centers where 1 = SA Centers and 0 = Non-SA Centers:
+
+plot(density(split(X.m)))
+```
+
+Generally similar heat maps: Most centers are in the Front Range:
+
+### Split K Function:
+
+Now let's see if we can apply this data split to a K function:
+
+```{r}
+estK <- Kest(X.m)
+plot(estK)
+```
+
+Great, the distribution of the centers is significantly different from what is expected of true normal spatial distributions.
+
+### Non-Parametric Relative Risk:
+
+Now I want to use a non-parametric relative risk assessment to determine if the locations of our treatment centers is statistically significant based on the treatment offered.
+
+```{r}
+probPH <- relrisk(X.m, diggle = T)
+plot(probPH)
+segregation.test(X.m, nsim = 200, hmin=0.05,hmax=5)
+```
+
+For the sake of learning, I also want to run the model assuming that there isn't a control and both groups are independent:
+
+```{r}
+probPH <- relrisk(X.m, diggle = T, casecontrol = F)
+plot(probPH, main = "Heat Map for diffe")
+seg.test <- segregation.test(X.m, nsim = 200, hmin=0.05,hmax=5)
+plot(probPH)
+seg.test
+```
+
+## Conclusion: Q1
+
+P = .199: This test ran to see if there were statistically significant differences in location between centers with Substance Abuse treatment and centers without Substance Abuse treatment. Our null hypothesis is that there will not be a statistically significant difference in locations between these two groups. In this dataset, our P-value is greater than .05, therefore we fail to reject the null hypothesis.
+
+# Question 2:
+
+Our secondary question is asking a similar question, but requires us to change our reference. The prompt is asking us to determine if there are statistically significant spatial differences between centers that provide Naltrexone treatment and centers that provide Buprenorphine treatment.
+
+To answer that question, we will need to do some data cleaning:
+
+## Data Cleaning:
+
+```{r}
+# First, it looks like many centers use both medications, but some may use either or. For our purposes, I want to create a new dataset where all observation are removed unless they have either naltrexone or buprenorphine use.
+
+data_Q2 <- data[grepl("Buprenorphine", data$Buprenorphine_used_in_Treatment) | grepl("Naltrexone", data$Naltrexone_used_in_Treatment), ]
+data_Q2
+
+#Now switch the new variable to a factor
+data_Q2$Naltrexone_used_in_Treatment <- as.factor(data_Q2$Naltrexone_used_in_Treatment) 
+
+data_Q2$Buprenorphine_used_in_Treatment <- as.factor(data_Q2$Buprenorphine_used_in_Treatment)
+```
+
+Great, we have now reduced our dataset to an N of 98. All remaining centers use either Buprenorphine or Naltrexone. Let's look at distribution:
+
+```{r}
+table(data_Q2$Naltrexone_used_in_Treatment)
+
+table(data_Q2$Buprenorphine_used_in_Treatment)
+
+#Now let's create an exportable table:
+
+label(data_Q2$Naltrexone_used_in_Treatment) <- "Naltrexone used in clinic"
+label(data_Q2$Buprenorphine_used_in_Treatment) <- "Buprenorphine used in clinic"
+
+table1(~ Naltrexone_used_in_Treatment + Buprenorphine_used_in_Treatment,
+       caption = "Table 1: Treatments Provided at Behavioral Health Centers",
+       data = data_Q2)
+
+
+```
+
+There is considerable overlap between centers that don't offer both. There are only 29 centers that only offer Naltrexone and only 8 centers that only offer Buprenorphine. This leaves 61 centers that provide both.
+
+## Preliminary Spatial Visualization:
+
+Great, we have now reduced our dataset to an N of 98. All remaining centers use either Buprenorphine or Naltrexone. Given our new finding, let's start creating new ranges now that the data changed.
+
+```{r}
+
+
+# Let's start by creating our observation window:
+bbx2 <- owin(xrange=range(data_Q2$X), yrange=range(data_Q2$Y))
+
+# Now we can make a the plot of all of our locartions:
+X2 <- ppp(data_Q2$X, data_Q2$Y, window=bbx2)
+
+plot(X2)
+```
+
+However, the same pattern is showing up, we're still have large clustering around the Front Range.
+
+### Data w/ Marks:
+
+Now, let's start by creating another matrix with this information and split this by marks.
+
+```{r}
+n <- dim(data_Q2)[1]     # Gets the dimension from the data frame
+sat <- rep(0,n)       # Initialize the vector with n number of 0's
+tmp <- grep("Buprenorphine", data_Q2$Buprenorphine_used_in_Treatment) # Pull appropriate rows
+sat[tmp] <- 1         # Use the index to set matching elements to 1
+sat <- factor(sat)    # Transform thiss into a factor
+X2.m2 <-ppp(data_Q2$X, data_Q2$Y, window=bbx2, marks=sat) # Define new plot
+
+plot(X2.m2)
+```
+
+Interesting, a qualitative review of this chart shows that centers that offer Buprenorphine seem more likely to be found in eastern portions. Whereas Naltrexone centers seem to be more frequently located in the the western portion.
+
+### Density Plot:
+
+Again, for ease of understanding, let's also make a density plot:
+
+```{r}
+tmp <- density(X2.m2, sigma = 0.25)
+plot(tmp)
+```
+
+Again, the Front Range is, by-and-large, the most impactful region of the map. However, we can start to see pockets in the rural regions.
+
+### Sites + Map Overlay:
+
+Now I want to see where all of these sites are directly on top of a map:
+
+```{r}
+# Create the map of Colorado for our overlay
+colo_map <- get_stadiamap(colo, zoom = 8, maptype = "stamen_terrain") |> ggmap()
+
+# Put the scatter plot over the map
+colo_map +
+  geom_point(aes(x = X, y = Y, color = Buprenorphine_used_in_Treatment), data = data_Q2, size = 2, alpha = 0.5) +
+  scale_color_manual(values = c("blue", "red"),
+                     labels = c("Buprenorphine Treatment","Naltrexone Treatment")
+                     ) +
+  labs(color = "Treatment Type") +
+  labs(title = "Figure 2: Locations of Centers Providing Buprenorphine and Naltrexone")
+```
+
+## Spatial Analysis:
+
+Let's start by binning these values and see if they are randomly distributed:
+
+```{r}
+# First let's plot out our sites on a 10x10 map.
+Q10 <- quadratcount(X2.m2,nx=8,ny=8)
+plot(Q10)
+
+# Now, let's see if there is any difference statistically of only our sites without differentiating services: 
+
+quadrat.test(X2.m2,nx=8,ny=8)
+
+# P < .0001, centers are not distributed randomly
+```
+
+X2.m2 = 1364.9and p-value \< .0001. The values are not distributed randomly.
+
+### Split K-Function:
+
+```{r}
+estK <- Kest(X2.m2)
+plot(estK)
+```
+
+Again, these values' locations are far from a simulated random distribution.
+
+### Non-Parametric Relative Risk:
+
+Now I want to see if these two sites are significantly different from one another:
+
+```{r}
+probPH <- relrisk(X2.m2, diggle = T, casecontrol = F)
+plot(probPH)
+segregation.test(X2.m2, nsim = 200, hmin=0.05,hmax=5)
+```
+
+## Conclusion: Q2
+
+T = 3.332 and p-value = 0.0199. Our null hypothesis is that there would not be a statistically significant difference in spatial location between these two groups. However, since our P value is lower than .05, we can say that there IS a significant difference in spatial location between these groups. Looking at these graphs, we can see that sites administering Buprenorphine are more likely to be in the Eastern half of the state than sites administering Naltrexone. Additionally, site administering Naltrexone are more likely to be in the western half of the state than sites east of the Rockies.
