@@ -1,0 +1,121 @@
+---
+title: ""
+format: html
+editor: visual
+---
+
+# R Animated Visualizations:
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I want to use this document to practice using gganimate. The goal is to create animated visualizations to better describe visual data,
+
+First, we need to set out libraries:
+
+```{r}
+library(gapminder)
+library(tidyverse)
+library(gganimate)
+library(gifski)
+library(png)
+library(av)
+```
+
+I will be using some of the global health datasets from Gapminder: <https://www.gapminder.org/data/.>
+
+My interest is the relationship between a country's C02 Emissions' and its GDP per Capita. I would like to model this over time. My hypothesis is that individual countries will have greater C02 emissions as their GDP increases.
+
+```{r}
+
+#To move foward with this, I downloaded a dataset for total C02 Emissions.
+
+#Let's start by importing the dataset:
+
+
+co2 <- read.csv("C:\\Users\\domin\\Downloads\\co2_pcap_cons.csv")
+
+head(co2)
+
+```
+
+• Use Tidy Data functions to integrate the downloaded table(s) with the existing gapminder dataset in R. (3 points)
+
+```{r}
+# Let's look at the gaminder dataset first and see the levels we need to merge on.
+gapminder
+
+#Ok, the gapminder package is: A. in the long format, and B.starting at 1952 rather than 1800. Additionally, the downloaded frames have expected values past 2007. We'll need to remove the years from 1800 - 1952, remove the years after 2007, and then flip the data from wide to a long dataframe.
+
+#Let's change the column names to only have the year
+
+co2 <- co2 %>%
+  rename_with(~ str_remove(., "^X"), starts_with("X"))
+co2
+
+co2 <- co2 %>%
+  mutate(across(`2003`:`2006`, as.numeric))
+
+# Let's start with removing the unnecessary year columns.
+
+co2_cleaned <- co2 %>%
+  select(-any_of(as.character(1800:1951)), -any_of(as.character(2008:2100)))
+head(co2_cleaned)
+
+# Excellent, now let's flip the data to long formatting
+
+long_co2 <- co2_cleaned %>%
+  pivot_longer(
+    cols = -country,            # Select all columns to pivot
+    names_to = "Year",              # Name for the new column containing years
+    values_to = "Co2"               # Name for the new column containing values
+  ) %>%
+  mutate(year = as.numeric(Year))
+long_co2
+
+# Now let's filter the data to be in the same 5 year increment
+
+filtered_co2 <- long_co2 %>%
+  filter(year %in% seq(1952, 2007, by = 5))
+
+# Then finally, merge co2 into the same dataset
+merged_data <- gapminder %>%
+  left_join(filtered_co2, by = c("country", "year"))
+merged_data
+
+
+
+
+
+```
+
+• Create one or multiple animation(s) to test your hypothesis. Label selected nodes, relevant to your hypothesis, in your animated scatterplots. (3 points)
+
+```{r}
+# Let's create our basic plots and store them into variables
+
+p <- ggplot(merged_data,
+       aes(x = gdpPercap, y = Co2, size = pop, color = continent)) +
+      geom_point() +
+      scale_x_log10() +
+      scale_color_viridis_d() +
+      labs(x = "GDP per Capitta", y = "Co2")
+p
+
+
+
+p2<- p + facet_wrap(~continent)
+
+p2 + transition_time(year) + labs(title = "Year:{frame_time}")
+
+```
+
+• State your observations regarding your hypothesis. (1 points)
+
+```{r}
+# I decided to add size based on population and add a facet_wrap to my final model to see if there were any continent specific issues.
+
+# My final result is that there is a general trend towards higher CO2 emissions with higher GDP per capita and a general trend that my hypothesis was correct. However, there seems to be continent specific problems. Continents with a higher amount of lower GDP countries increased CO2 emissions significantly slower than continents with a lower amount of low gdp countries (i.e. the differences between Africa and Europe.)
+
+```
