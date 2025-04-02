@@ -21,3 +21,68 @@ library(shiny)
 ```{r}
 data <- read.csv("C:\\Users\\domin\\Downloads\\Practicum_Cleaned_Data.csv")
 ```
+
+Quick review for Project Description: Creating a Density plot for Baseline Seizure counts based on Insurance
+
+```{r}
+# Filter dataset to include only "Private" and "Medicaid/CHF"
+filtered_insurance <- data %>%
+  filter(insurance %in% c("Private", "Medicaid/CHF"))
+
+# Create density plot
+ggplot(filtered_insurance, aes(x = baseline_seizure, fill = insurance, color = insurance)) +
+  geom_density(alpha = 0.3) +  # Transparency to see overlap
+  scale_x_log10() +  # Log-scale if needed
+  theme_minimal() +
+  labs(title = "Density Plot of Count Variable by Insurance Type",
+       x = "Intake Seizure Frequency",
+       y = "Density",
+       fill = "Insurance Type",
+       color = "Insurance Type") +
+  scale_fill_manual(values = c("Private" = "blue", "Medicaid/CHF" = "red")) +
+  scale_color_manual(values = c("Private" = "blue", "Medicaid/CHF" = "red"))
+```
+
+Continuing this theme, let's create a box plot of baseline seizure:
+
+```{r}
+# Reshape data from wide to long format
+long_data <- data %>%
+  pivot_longer(cols = c(baseline_seizure, three_month_seizure, six_month_seizure, discharge_seizure), 
+               names_to = "Variable", 
+               values_to = "Value")
+
+ggplot(long_data, aes(x = Variable, y = Value, fill = Variable)) +
+  geom_boxplot(alpha = 0.7) +  # Transparency to distinguish overlapping areas
+  theme_minimal() +
+  scale_y_log10() +
+  labs(title = "Boxplot of Four Variables",
+       x = "Timepoint",
+       y = "Seizure Amount") +
+  scale_fill_manual(values = c("baseline_seizure" = "blue", "three_month_seizure" = "red", "six_month_seizure" = "green", "discharge_seizure" = "purple"))
+
+
+```
+
+Now for another but only with patients that have depression:
+
+```{r}
+
+
+# Now let's try a combined plot with the entire population and only those with depression:
+
+# Create a new column to label the two groups
+long_data_combined <- long_data %>%
+  mutate(Group = ifelse(depression_any == 1, "Depression", "No Depression"))
+
+# Create the combined boxplot
+ggplot(long_data_combined, aes(x = Variable, y = Value, fill = Group)) +
+  geom_boxplot(alpha = 0.7, position = position_dodge(width = 0.75)) +  # Dodge boxes for separation
+  theme_minimal() +
+  labs(title = "Comparison of All Patients vs. Patients w/ Depression Dx",
+       x = "Timepoint",
+       y = "Log of seizure frequency",
+       fill = "Group") +
+  scale_y_log10() +
+  scale_fill_manual(values = c("No Depression" = "blue", "Depression" = "red"))
+```
