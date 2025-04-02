@@ -1,0 +1,23 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+# Data Visualization: Shiny App
+
+The purpose of this document is to create a functioning Shiny application. The data will be a de-identified dataset from an anonymous database of clinical data.
+
+## Packages:
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(shiny)
+```
+
+## Data import
+
+```{r}
+data <- read.csv("C:\\Users\\domin\\Downloads\\Practicum_Cleaned_Data.csv")
+```
