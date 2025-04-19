@@ -47,6 +47,12 @@ ui <- dashboardPage(
                        selectInput("secondary_var", "Variable #2:", choices = c("", data_vars), selected = "")
                 ),
                 column(width = 2,
+                       conditionalPanel(
+                         condition = "input.secondary_var != ''",
+                         selectInput("plot_type", "Plot Type:", choices = c("Boxplot", "Scatterplot"))
+                       )
+                ),
+                column(width = 2,
                        checkboxInput("stratify", "Stratify?", value = FALSE),
                        checkboxInput("show_percent", "Show Percentages?", value = FALSE)
                 ),
@@ -64,7 +70,7 @@ ui <- dashboardPage(
                     verbatimTextOutput("selected_info"),
                     conditionalPanel(
                       condition = "input.primary_var != ''",
-                      plotlyOutput("bar_chart")
+                      plotlyOutput("exploration_plot")
                     )
                 )
               )
@@ -121,7 +127,7 @@ server <- function(input, output, session) {
   
   
   #######################################################################################
-  #FREQUENCIES AND BARCHARTS
+  # Charts
   #######################################################################################
   
   # This section focuses on the multiple levels of changes that can occur for the 
@@ -130,65 +136,106 @@ server <- function(input, output, session) {
   # the reference to percentages rather than counts
   
   # Bar chart output for primary variable + Addition of Stratification Var.
-  output$bar_chart <- renderPlotly({
+  output$exploration_plot <- renderPlotly({
     req(input$primary_var)
     
-    # Set a new dataframe for this, to make it easier to code
-    data <- dataset
     
-    # If Statement for if the user stratified the frequency.
-    if (input$stratify && input$stratify_var != "") {
-      # And if the calculate percentages was added
-      if (input$show_percent) {
-        
-        df <- data %>%
-          group_by(across(all_of(c(input$primary_var, input$stratify_var)))) %>%
-          summarise(n = n(), .groups = "drop") %>%
-          group_by(across(all_of(input$primary_var))) %>%
-          mutate(percent = n / sum(n) * 100)
-        
-        p <- ggplot(df, aes_string(x = input$primary_var, y = "percent", fill = input$stratify_var)) +
-          geom_bar(stat = "identity", position = "dodge") +
-          theme_minimal() +
-          labs(x = input$primary_var, y = "Percentage", fill = input$stratify_var)
-        
-      } else {
-        # Raw counts
-        p <- ggplot(data, aes_string(x = input$primary_var, fill = input$stratify_var)) +
-          geom_bar(position = "dodge") +
-          theme_minimal() +
-          labs(x = input$primary_var, y = "Count", fill = input$stratify_var)
+    #######################################################################################
+    # BOX PLOTS 
+    #######################################################################################
+    
+    if (input$primary_var != "" && input$secondary_var != "" && input$plot_type == "Boxplot") {
+      if (!is.numeric(dataset[[input$secondary_var]])) {
+        showNotification("Secondary variable must be numeric for a boxplot.", type = "error")
+        return(NULL)
       }
       
-    } else {
-      # Not stratified
-      if (input$show_percent) {
-        # Percentages without stratification
-        df <- data %>%
-          group_by(across(all_of(input$primary_var))) %>%
-          summarise(n = n(), .groups = "drop") %>%
-          mutate(percent = n / sum(n) * 100)
-        
-        p <- ggplot(df, aes_string(x = input$primary_var, y = "percent")) +
-          geom_bar(stat = "identity", fill = "#0073C2FF") +
-          theme_minimal() +
-          labs(x = input$primary_var, y = "Percentage")
-        
-      } else {
-        # Raw counts
-        p <- ggplot(data, aes_string(x = input$primary_var)) +
-          geom_bar(fill = "#0073C2FF") +
-          theme_minimal() +
-          labs(x = input$primary_var, y = "Count")
-      }
+      
+      # Create boxplot
+      p <- ggplot(dataset, aes_string(x = input$primary_var, y = input$secondary_var)) +
+        geom_boxplot(fill = "#56B4E9", alpha = 0.7) +
+        theme_minimal() +
+        labs(x = input$primary_var, y = input$secondary_var)
+      
+      return(ggplotly(p))
     }
-     
-    ggplotly(p)
+    
+    
+    #######################################################################################
+    # Scatterplots
+    #######################################################################################    
+    
+    # Scatterplot case
+    if (input$secondary_var != "" && input$plot_type == "Scatterplot") {
+      # Make sure both variables are numeric
+      if (!is.numeric(dataset[[input$primary_var]]) || !is.numeric(dataset[[input$secondary_var]])) {
+        showNotification("Both variables must be numeric for a scatterplot.", type = "error")
+        return(NULL)
+      }
+      
+      p <- ggplot(dataset, aes_string(x = input$primary_var, y = input$secondary_var)) +
+        geom_point(alpha = 0.7, color = "#0072B2", size = 2) +
+        theme_minimal() +
+        labs(x = input$primary_var, y = input$secondary_var)
+      
+      return(ggplotly(p))
+    }
+    
+    
+    #######################################################################################
+    # FREQUENCIES AND BARCHARTS
+    #######################################################################################
+    
+    
+    
+    # Set a new dataframe for this, to make it easier to code
+    if (input$secondary_var == "") {
+      if (input$stratify && input$stratify_var != "") {
+        if (input$show_percent) {
+          df <- dataset %>%
+            group_by(across(all_of(c(input$primary_var, input$stratify_var)))) %>%
+            summarise(n = n(), .groups = "drop") %>%
+            group_by(across(all_of(input$primary_var))) %>%
+            mutate(percent = n / sum(n) * 100)
+          
+          p <- ggplot(df, aes_string(x = input$primary_var, y = "percent", fill = input$stratify_var)) +
+            geom_bar(stat = "identity", position = "dodge") +
+            theme_minimal() +
+            labs(x = input$primary_var, y = "Percentage", fill = input$stratify_var)
+        } else {
+          p <- ggplot(dataset, aes_string(x = input$primary_var, fill = input$stratify_var)) +
+            geom_bar(position = "dodge") +
+            theme_minimal() +
+            labs(x = input$primary_var, y = "Count", fill = input$stratify_var)
+        }
+      } else {
+        if (input$show_percent) {
+          df <- dataset %>%
+            group_by(across(all_of(input$primary_var))) %>%
+            summarise(n = n(), .groups = "drop") %>%
+            mutate(percent = n / sum(n) * 100)
+          
+          p <- ggplot(df, aes_string(x = input$primary_var, y = "percent")) +
+            geom_bar(stat = "identity", fill = "#0073C2FF") +
+            theme_minimal() +
+            labs(x = input$primary_var, y = "Percentage")
+        } else {
+          p <- ggplot(dataset, aes_string(x = input$primary_var)) +
+            geom_bar(fill = "#0073C2FF") +
+            theme_minimal() +
+            labs(x = input$primary_var, y = "Count")
+        }
+      }
+      
+      return(ggplotly(p))
+    }
   })
   
-  #######################################################################################
-  #BOX PLOTS 
-  #######################################################################################
+
+
+#######################################################################################  
+  
+  
 }
 
 shinyApp(ui, server)
